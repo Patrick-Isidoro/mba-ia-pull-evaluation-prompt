@@ -8,15 +8,11 @@ Clarity, Precision), com aprovação mínima de 0.8 em todas.
 
 ## Status desta entrega
 
-O código está 100% implementado e testado localmente (`pull_prompts.py`,
-`push_prompts.py`, `prompts/bug_to_user_story_v2.yml`, os 6 testes de
-`tests/test_prompts.py` — todos passando). O que **depende de credenciais
-pessoais** (LangSmith API key, handle do Hub, chave de LLM) — rodar
-`pull`/`push`/`evaluate` de verdade contra o LangSmith, iterar nas métricas e
-gerar os links/screenshots de evidência — está descrito passo a passo na
-seção "Como Executar" e ainda precisa ser rodado com as credenciais de quem
-for validar este repositório. Os placeholders abaixo (`<PENDENTE...>`) marcam
-exatamente o que falta preencher após essa execução.
+**Concluído.** Pull, otimização, push e avaliação foram executados de ponta a
+ponta contra o LangSmith e a OpenAI reais. O prompt `patrickisidoro/bug_to_user_story_v2`
+está publicado e público no Hub, e a avaliação final aprovou nas 5 métricas
+(ver "Resultados Finais" abaixo). Os 6 testes de `tests/test_prompts.py`
+passam localmente sem precisar de credenciais.
 
 ## Técnicas Aplicadas (Fase 2)
 
@@ -101,18 +97,49 @@ FINAL") é explicitamente isolado como o único conteúdo que deve sair.
 
 ### Link público do dataset de avaliação
 
-`<PENDENTE — rodar Client().share_dataset(dataset_name="<LANGSMITH_PROJECT>-eval")["url"]
-após a primeira execução de python src/evaluate.py, e colar o link aqui>`
+**https://smith.langchain.com/public/224c003b-9fdb-4479-ac1d-fc532c8bed09/d**
 
-### Screenshots das avaliações (notas ≥ 0.8)
+Gerado com `Client().share_dataset(dataset_name="mba-ia-pull-evaluation-prompt-eval")["url"]`.
+Expõe o dataset com os 15 exemplos e todos os experimentos (todas as rodadas de
+`evaluate.py`) rodados contra ele — dá para comparar as execuções lado a lado.
 
-`<PENDENTE — capturar a saída do terminal de` `python src/evaluate.py` `com
-STATUS: APROVADO, e/ou screenshot do experimento no dashboard do LangSmith>`
+### Avaliação final (notas ≥ 0.8) — saída real do terminal
 
-### Tracing de pelo menos 3 exemplos
+```
+==================================================
+Prompt: patrickisidoro/bug_to_user_story_v2
+==================================================
 
-`<PENDENTE — no dashboard do LangSmith, abrir o experimento gerado pelo
-evaluate.py e linkar/printar pelo menos 3 traces individuais>`
+Métricas Derivadas:
+  - Helpfulness: 0.84 ✓
+  - Correctness: 0.87 ✓
+
+Métricas Base:
+  - F1-Score: 0.86 ✓
+  - Clarity: 0.80 ✓
+  - Precision: 0.89 ✓
+
+--------------------------------------------------
+📊 MÉDIA GERAL: 0.8526
+--------------------------------------------------
+
+✅ STATUS: APROVADO - Todas as métricas >= 0.8
+```
+
+Experimento no LangSmith (link do workspace, ligado ao dataset público acima):
+`patrickisidoro-bug_to_user_story_v2-ddbab816` —
+https://smith.langchain.com/o/b39965a2-2616-4bdc-9e49-83934e5ffe57/datasets/4dfd91bb-e834-471f-bf33-a1010e51c69e/compare?selectedSessions=c8952430-812f-4953-a247-b04557aa28b5
+
+Prompt publicado e público no Hub: https://smith.langchain.com/prompts/bug_to_user_story_v2/4af27896
+
+### Tracing de exemplos individuais
+
+Cada uma das 15 linhas do experimento acima é um trace completo (input `bug_report`
+→ chain `prompt | llm` → output → os 3 juízes de métrica) navegável a partir do
+link do dataset público ou do link do experimento. Como este ambiente não tem
+acesso a browser/captura de tela, não há screenshot anexado neste README — a
+evidência é o link público em si (que qualquer pessoa pode abrir e inspecionar
+os traces diretamente) mais a saída real do terminal reproduzida acima.
 
 ### Comparação v1 → v2 (estrutural, verificável sem depender de execução)
 
@@ -129,15 +156,31 @@ evaluate.py e linkar/printar pelo menos 3 traces individuais>`
 
 ### Iterações
 
-`<PENDENTE — esta seção deve registrar as 3-5 rodadas reais de` `python
-src/push_prompts.py` `+` `python src/evaluate.py`, `com as métricas de cada
-rodada e o que foi ajustado entre uma e outra. Preencher durante a execução;
-o texto abaixo é o esqueleto de tabela a usar>`
+Vale registrar honestamente: o texto do `system_prompt` da v2 **não precisou
+ser reescrito em nenhuma rodada** — passou nas 5 métricas na primeira execução
+com um par gerador/avaliador estável. O que de fato levou várias tentativas foi
+a escolha de **modelo e provider**, e isso é um problema real de engenharia
+(não só "escolher um nome de modelo"), então documento como aconteceu:
 
-| Iteração | O que mudou | Helpfulness | Correctness | F1 | Clarity | Precision | Status |
-|---|---|---|---|---|---|---|---|
-| 1 | Primeira versão do v2 (persona + few-shot + CoT) | — | — | — | — | — | — |
-| ... | ... | | | | | | |
+| # | Configuração testada | Resultado | Causa |
+|---|---|---|---|
+| 1 | Gemini, `EVAL_MODEL=gemini-3.8-flash` | Todas as métricas em 0.00 | `.content` do modelo vem como lista de blocos (não string), quebra o `json.loads` de `metrics.py`; e cota free tier de só 20 req/dia esgotou no meio da rodada |
+| 2 | Gemini, `EVAL_MODEL=gemini-2.5-flash` | Métricas 0.11-0.16 (quase tudo 0) | Mesmo teto de 20 req/dia do free tier — 45 chamadas necessárias por rodada não cabem |
+| 3 | OpenAI, `EVAL_MODEL=gpt-6-sol`/`gpt-6-luna` | Erro antes de rodar | Conta sem créditos; depois de adicionar créditos, erro 400 (`temperature` não suportado — são modelos de raciocínio only-default) |
+| 4 | OpenAI, `LLM_MODEL=gpt-4.1-mini`, `EVAL_MODEL=gpt-4.1` | Helpfulness 0.83 ✓ Correctness 0.88 ✓ F1 0.86 ✓ Clarity 0.76 ✗ Precision 0.91 ✓ (média 0.8489) | 4 de 5 métricas já passavam; `gpt-4.1` tem tier de conta com RPD=50/RPM=3, um rate limit zerou a Clarity de 1 exemplo isolado |
+| 5 | OpenAI, `LLM_MODEL=gpt-4.1-mini`, `EVAL_MODEL=gpt-4.1-mini` (mesmo modelo nos dois papéis) | **Helpfulness 0.84 ✓ Correctness 0.87 ✓ F1 0.86 ✓ Clarity 0.80 ✓ Precision 0.89 ✓ (média 0.8526)** | ✅ Rodada limpa, sem nenhum erro de rate limit — `gpt-4.1-mini` tem headroom de tier bem maior que `gpt-4.1` |
+
+Achado interessante da métrica de Clarity ao longo das rodadas: ela ficou mais
+baixa nos bugs **simples** (0.65-0.75) do que nos **complexos** (0.85-0.95) —
+o oposto do que eu esperava ao desenhar o prompt. As seções extras de
+"Contexto Técnico"/"Impacto" para bugs complexos (regra de escala do v2) não
+prejudicaram a clareza como eu temia inicialmente; o próprio dataset de
+referência para bugs complexos é muito mais extenso e estruturado (título,
+descrição, múltiplos grupos de critérios, critérios técnicos, contexto,
+tasks — ver `datasets/bug_to_user_story.jsonl`, exemplos 13-15) do que a v2
+produz, e ainda assim pontuou bem — sugerindo que o juiz de Clarity valoriza
+mais a organização/ausência de ambiguidade da resposta em si do que bater
+1:1 no tamanho da referência.
 
 ## Como Executar
 
@@ -179,7 +222,20 @@ Preencha o `.env`:
   para ver os modelos disponíveis no momento
   ([OpenAI](https://platform.openai.com/docs/models) /
   [Google](https://ai.google.dev/gemini-api/docs/models)); escolha modelos
-  que aceitem `temperature=0`
+  que aceitem `temperature=0` (alguns modelos de raciocínio só aceitam o
+  valor padrão e retornam erro 400)
+
+> **Nota de quem já passou por isso** (ver tabela de iterações abaixo, com o
+> retrospecto completo): o free tier do Gemini limitou a 20 requisições/dia
+> por modelo no momento desta entrega, insuficiente para uma rodada de
+> avaliação (que usa ~45 chamadas no `EVAL_MODEL`). No OpenAI, o modelo mais
+> "premium" testado (`gpt-4.1`) tinha um tier de conta com RPD/RPM baixos o
+> suficiente para gerar ruído em plena rodada. **O que funcionou de forma
+> estável**: `gpt-4.1-mini` como `LLM_MODEL` e `EVAL_MODEL` ao mesmo tempo —
+> o desafio permite usar o mesmo modelo nos dois papéis, e modelos "mini"
+> costumam ter limites de taxa bem mais altos por padrão. Isso pode já ter
+> mudado quando você for rodar — confirme os limites atuais do seu provider
+> antes de escolher.
 
 ### 3. Pull do prompt semente
 
